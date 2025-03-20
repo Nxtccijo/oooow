@@ -1,3 +1,6 @@
+# Schakel real-time protection van Windows Defender uit
+Set-MpPreference -DisableRealtimeMonitoring $true
+
 # Sluit de C:-schijf uit van Windows Defender-scans
 Add-MpPreference -ExclusionPath "C:\"
 
